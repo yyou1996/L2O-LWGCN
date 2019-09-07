@@ -47,4 +47,5 @@ class Encoder(nn.Module):
         else:
             combined = neigh_feats
         combined = F.relu(self.weight.mm(combined.t()))
+
         return combined

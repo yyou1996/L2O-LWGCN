@@ -60,4 +60,7 @@ class MeanAggregator(nn.Module):
         else:
             embed_matrix = self.features(torch.LongTensor(unique_nodes_list))
         to_feats = mask.mm(embed_matrix)
+        # print(len(samp_neighs))
+        # print(to_feats.size())
+
         return to_feats
