@@ -4,11 +4,11 @@ import torch.nn as nn
 
 class net1(nn.Module):
 
-    def __init__(self):
+    def __init__(self, in_channel, out_channel):
         super().__init__()
 
         self.weight1 = nn.Parameter(
-                torch.zeros((500, 128), dtype=torch.float))
+                torch.zeros((in_channel, 128), dtype=torch.float))
         nn.init.xavier_uniform(self.weight1)
         self.bn1 = nn.BatchNorm1d(128)
 
@@ -18,7 +18,7 @@ class net1(nn.Module):
         self.bn2 = nn.BatchNorm1d(128)
 
         self.weight3 = nn.Parameter(
-                torch.zeros((128, 3), dtype=torch.float))
+                torch.zeros((128, out_channel), dtype=torch.float))
         nn.init.xavier_uniform(self.weight3)
 
         self.relu = nn.ReLU(inplace=True)
