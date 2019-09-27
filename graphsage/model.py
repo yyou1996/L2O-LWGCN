@@ -354,12 +354,13 @@ def run_pubmed_ltf():
             Adj[j, i] = 1
     Adj_eye = torch.eye(19717)
 
-    '''
+    feat_0 = torch.FloatTensor(feat_data)
+    Adj_0 = ( Adj / Adj.sum(dim=0) ).t() + Adj_eye
+    feat_train = torch.FloatTensor(feat_data)[train, :]
     Adj_train = Adj[train, :][:, train]
-    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t()
-    Adj_train = Adj_train + Adj_eye[train, :][:, train]
-    '''
+    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t() + Adj_eye[train, :][:, train]
 
+    '''
     Adj_test = Adj
     Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t()
     Adj_test = Adj_test + Adj_eye
@@ -367,6 +368,11 @@ def run_pubmed_ltf():
     __feat = features.weight
     __feat = Adj_test.mm(__feat)
     _feat = __feat[torch.LongTensor(train)]
+    '''
+
+    __feat = feat_train
+    __feat = Adj_train.mm(__feat)
+    _feat = __feat
 
     times = []
 
@@ -408,9 +414,15 @@ def run_pubmed_ltf():
     w1, w2, w3 = net1.get_w()
     w1.requires_grad = False
     # _feat = relu(Adj_train.mm(_feat).mm(w1))
+
+    '''
     __feat = Adj_test.mm(relu(__feat.mm(w1)))
     _feat = __feat[torch.LongTensor(train)]
+    '''
 
+    __feat = Adj_train.mm(relu(__feat.mm(w1)))
+    _feat = __feat
+ 
     print(_feat.size(), _label.size())
 
     _feeder = feed(_feat, __label)
@@ -455,6 +467,7 @@ def run_pubmed_ltf():
         val_output = net_test(_feat, Adj_test)[train, :]
     '''
 
+    __feat = Adj_0.mm(relu(Adj_0.mm(feat_0).mm(w1)))
     with torch.no_grad():
         val_output = relu(__feat.mm(w2)).mm(w3)[torch.LongTensor(test)]
 
@@ -472,5 +485,5 @@ def setup_seed(seed):
 if __name__ == "__main__":
     setup_seed(50)
 
-    run_cora_ltf()
-    # run_pubmed_ltf()
+    # run_cora_ltf()
+    run_pubmed_ltf()

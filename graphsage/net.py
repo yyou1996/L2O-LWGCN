@@ -18,7 +18,6 @@ class net_train(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-
         x = torch.mm(x, self.weight)
         x = self.relu(x)
         x = torch.mm(x, self.classifier)
@@ -29,6 +28,27 @@ class net_train(nn.Module):
 
     def get_c(self):
         return self.classifier
+
+class net_test(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x, Adj, weight_list, classifier):
+
+        for w in weight_list:
+            x = torch.sparse.mm(Adj, x)
+            x = torch.mm(x, w)
+            x = self.relu(x)
+
+        x = torch.mm(x, classifier)
+
+        return x
+
+
+'''
 
 class net1(nn.Module):
 
@@ -81,25 +101,5 @@ class net2(nn.Module):
 
     def get_w(self):
         return self.weight2, self.weight3
-
-class net_test(nn.Module):
-
-    def __init__(self, w1, w2, w3):
-        super().__init__()
-
-        self.weight1 = w1
-        self.weight2 = w2
-        self.weight3 = w3
-
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x, Adj):
-
-        x = Adj.mm(x)
-        x = self.relu(torch.mm(x, self.weight1))
-        x = Adj.mm(x)
-        x = self.relu(torch.mm(x, self.weight2))
-        x = torch.mm(x, self.weight3)
-
-        return x
+'''
 
