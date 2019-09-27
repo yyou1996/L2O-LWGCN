@@ -4,10 +4,10 @@ import torch.utils.data as d
 
 class feeder(d.Dataset):
 
-    def __init__(self, _feat, _label):
+    def __init__(self, feat, label):
 
-        self.feat = _feat
-        self.label = _label
+        self.feat = feat
+        self.label = label
 
     def __len__(self):
         return self.label.shape[0]

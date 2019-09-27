@@ -104,7 +104,7 @@ def run(dataset_load_func, config_file):
 
     # config parameter load
     with open('./config/' + config_file) as f:
-        args = yaml.load(f, Loader=yaml.FullLoader)
+        args = yaml.load(f)
     print(args)
 
     num_nodes = args['node_num']
@@ -116,8 +116,9 @@ def run(dataset_load_func, config_file):
     train = list(rand_indices[(args['testset_size'] + args['valset_size']):])
     train.sort()
 
-    # feature generate
+    # feature and label generate
     feat_train = torch.FloatTensor(feat_data)[train, :]
+    label_train = labels[np.array(train)]
     feat_test = torch.FloatTensor(feat_data)
 
     # Adj matrix generate
@@ -129,132 +130,73 @@ def run(dataset_load_func, config_file):
     Adj_eye = torch.eye(num_nodes)
 
     Adj_train = Adj[train, :][:, train]
-    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t() + Adj_eye[train, :][:, train]
+    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t()
+    Adj_train = Adj_train + Adj_eye[train, :][:, train]
 
-    Adj_test = Adj
-    Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t() + Adj_eye
-
-
-
-    feat_0 = torch.FloatTensor(feat_data)
-    Adj_0 = ( Adj / Adj.sum(dim=0) ).t() + Adj_eye
-    feat_train = torch.FloatTensor(feat_data)[train, :]
-    Adj_train = Adj[train, :][:, train]
-    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t() + Adj_eye[train, :][:, train]
-
-    '''
     Adj_test = Adj
     Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t()
     Adj_test = Adj_test + Adj_eye
 
-    __feat = features.weight
-    __feat = Adj_test.mm(__feat)
-    _feat = __feat[torch.LongTensor(train)]
-    '''
-
-    __feat = feat_train
-    __feat = Adj_train.mm(__feat)
-    _feat = __feat
-
+    # layered training
     times = []
+    weight_list = nn.ParameterList()
 
-    # print(train)
-#    _feat = features(torch.LongTensor(train))
-#    _feat = Adj_train.mm(_feat)
-    __label = labels[np.array(train)]
-    _feeder = feed(_feat, __label)
-    _dataset = torch.utils.data.DataLoader(
-        dataset=_feeder, batch_size=1024)
-
-    net1 = net.net1(500, 3)
-    optimizer = torch.optim.SGD(net1.parameters(), lr=1)
- 
     loss_func = nn.CrossEntropyLoss()
-    batch = 0
-    flag = 0
-
-    for _ in range(200):
-        for x, _label in _dataset:
-            start_time = time.time()
-            optimizer.zero_grad()
-            output = net1(x)
-            loss = loss_func(output, _label.view(-1))
-            loss.backward()
-            optimizer.step()
-            end_time = time.time()
-            times.append(end_time-start_time)
-            batch = batch + 1
-            print(batch, loss.data)
-            print("Training F1:", f1_score(_label, output.data.numpy().argmax(axis=1), average="micro"))
-            if batch == 50:
-                flag = 1
-                break
-        if flag == 1:
-            break
-
     relu = nn.ReLU(inplace=True)
-    w1, w2, w3 = net1.get_w()
-    w1.requires_grad = False
-    # _feat = relu(Adj_train.mm(_feat).mm(w1))
 
-    '''
-    __feat = Adj_test.mm(relu(__feat.mm(w1)))
-    _feat = __feat[torch.LongTensor(train)]
-    '''
+    for l in range(args['layer_num']):
 
-    __feat = Adj_train.mm(relu(__feat.mm(w1)))
-    _feat = __feat
- 
-    print(_feat.size(), _label.size())
+        feat_train = torch.mm(Adj_train, feat_train) # sparse.mm
+        feeder_train = feed(feat_train, label_train)
+        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'])
 
-    _feeder = feed(_feat, __label)
-    _dataset = torch.utils.data.DataLoader(
-        dataset=_feeder, batch_size=1024)
+        if l == 0:
+            in_channel = args['feat_dim']
+        else:
+            in_channel = args['layer_output_dim'][l-1]
+        hidden_channel = args['layer_output_dim'][l]
+        out_channel = args['class_num']
 
-    net2 = net.net2(w2, w3)
-    optimizer = torch.optim.SGD(net2.parameters(), lr=1)
-    batch = 0
-    flag = 0
+        net_train = net.net_train(in_channel, hidden_channel, out_channel)
+        optimizer = torch.optim.SGD(net_train.parameters(), lr=args['learning_rate'])
 
-    for _ in range(2000):
-        for x, _label in _dataset:
-            start_time = time.time()
-            optimizer.zero_grad()
-            output = net2(x)
-            loss = loss_func(output, _label.view(-1))
-            loss.backward()
-            optimizer.step()
-            end_time = time.time()
-            times.append(end_time-start_time)
-            batch = batch + 1
-            print(batch, loss.data)
-            print("Training F1:", f1_score(_label, output.data.numpy().argmax(axis=1), average="micro"))
-            if batch == 200:
-                flag = 1
+        batch = 0
+        flag = 0
+        while True:
+            for x, x_label in dataset_train:
+
+                start_time = time.time()
+                optimizer.zero_grad()
+                output = net_train(x)
+                loss = loss_func(output, x_label.view(-1))
+                loss.backward()
+                optimizer.step()
+                end_time = time.time()
+                times.append(end_time - start_time)
+                batch = batch + 1
+                print(batch, loss.data)
+                print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
+                if batch == args['layer_train_batch'][l]:
+                    flag = 1
+                    break
+
+            if flag == 1:
+                w = net_train.get_w()
+                w.requires_grad = False
+                feat_train = torch.mm(feat_train, w)
+                feat_train = relu(feat_train)
+                weight_list.append(w)
+                if l == args['layer_num'] - 1:
+                    classifier = net_train.get_c()
+                    classifier.requires_grad = False
                 break
-        if flag == 1:
-            break
 
-    '''
-    Adj_test = Adj
-    Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t()
-    Adj_test = Adj_test + Adj_eye
-    '''
-
-    w2, w3 = net2.get_w()
-    # net_test = net.net_test(w1, w2, w3)
-
-    '''
+    # test
+    net_test = net.net_test()
     with torch.no_grad():
-        val_output = net_test(_feat, Adj_test)[train, :]
-    '''
+        output = net_test(feat_test, Adj_test, weight_list, classifier)[test, :]
 
-    __feat = Adj_0.mm(relu(Adj_0.mm(feat_0).mm(w1)))
-    with torch.no_grad():
-        val_output = relu(__feat.mm(w2)).mm(w3)[torch.LongTensor(test)]
-
-    print("Validation F1:", f1_score(labels[test], val_output.data.numpy().argmax(axis=1), average="micro"))
-    # print("Validation F1:", f1_score(__label, val_output.data.numpy().argmax(axis=1), average="micro"))
+    print("Acc in test:", f1_score(labels[test], output.data.numpy().argmax(axis=1), average="micro"))
     print("Average batch time:", np.mean(times))
 
 def setup_seed(seed):
@@ -265,7 +207,6 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 if __name__ == "__main__":
-    setup_seed(50)
 
-    # run_cora_ltf()
-    run_pubmed_ltf()
+    setup_seed(50)
+    run(load_pubmed, 'pubmed.yaml')
