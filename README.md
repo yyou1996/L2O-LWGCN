@@ -1,1 +1,1 @@
-L2L-Efficient-GCN
+Efficient-L2L-LT-GCN
