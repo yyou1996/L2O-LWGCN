@@ -1,0 +1,7 @@
+node_num: 19717
+feat_dim: 500
+class_num: 3
+
+trainset_size: 18217
+valset_size: 500
+testset_size: 1000

@@ -116,7 +116,7 @@ def run(dataset_load_func, config_file):
     train = list(rand_indices[(args['testset_size'] + args['valset_size']):])
     train.sort()
 
-    # feature generate generate
+    # feature generate
     feat_train = torch.FloatTensor(feat_data)[train, :]
     feat_test = torch.FloatTensor(feat_data)
 
