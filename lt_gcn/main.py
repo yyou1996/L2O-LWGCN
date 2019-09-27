@@ -9,17 +9,13 @@ import random
 from sklearn.metrics import f1_score
 from collections import defaultdict
 
-from graphsage.encoders import Encoder
-from graphsage.aggregators import MeanAggregator
-
-from graphsage.feeder import feeder as feed
-import graphsage.net as net
+from lt_gcn.feeder import feeder as feed
+import lt_gcn.net as net
 
 import yaml
 
 """
-Simple supervised GraphSAGE model as well as examples running the model
-on the Cora and Pubmed datasets.
+layered training, forked from graphsage
 """
 
 class SupervisedGraphSage(nn.Module):
@@ -174,7 +170,7 @@ def run(dataset_load_func, config_file):
                 end_time = time.time()
                 times.append(end_time - start_time)
                 batch = batch + 1
-                print(batch, loss.data)
+                print('batch', batch, ' loss:', loss.data)
                 print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
                 if batch == args['layer_train_batch'][l]:
                     flag = 1
