@@ -2,6 +2,34 @@ import torch
 import torch.nn as nn
 
 
+class net_train(nn.Module):
+
+    def __init__(self, in_channel, hidden_channel, out_channel):
+        super().__init__()
+
+        self.weight = nn.Parameter(
+                torch.zeros((in_channel, hidden_channel), dtype=torch.float))
+        nn.init.xavier_uniform(self.weight)
+
+        self.classifier = nn.Parameter(
+                torch.zeros((hidden_channel, out_channel), dtype=torch.float))
+        nn.init.xavier_uniform(self.classifier)
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+
+        x = torch.mm(x, self.weight)
+        x = self.relu(x)
+        x = torch.mm(x, self.classifier)
+        return x
+
+    def get_w(self):
+        return self.weight
+
+    def get_c(self):
+        return self.classifier
+
 class net1(nn.Module):
 
     def __init__(self, in_channel, out_channel):
