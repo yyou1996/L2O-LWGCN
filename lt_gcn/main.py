@@ -144,7 +144,7 @@ def run(dataset_load_func, config_file):
 
         feat_train = torch.mm(Adj_train, feat_train) # sparse.mm
         feeder_train = feed(feat_train, label_train)
-        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'])
+        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'], shuffle=True)
 
         if l == 0:
             in_channel = args['feat_dim']
@@ -153,13 +153,16 @@ def run(dataset_load_func, config_file):
         hidden_channel = args['layer_output_dim'][l]
         out_channel = args['class_num']
 
-        net_train = net.net_train(in_channel, hidden_channel, out_channel)
+        net_train = net.net_train(in_channel, hidden_channel, out_channel).to(torch.device(args['device']))
         optimizer = torch.optim.SGD(net_train.parameters(), lr=args['learning_rate'])
 
         batch = 0
         flag = 0
         while True:
             for x, x_label in dataset_train:
+
+                x = x.to(torch.device(args['device']))
+                x_label = x_label.to(torch.device(args['device']))
 
                 start_time = time.time()
                 optimizer.zero_grad()
@@ -170,8 +173,8 @@ def run(dataset_load_func, config_file):
                 end_time = time.time()
                 times.append(end_time - start_time)
                 batch = batch + 1
-                print('batch', batch, ' loss:', loss.data)
-                print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
+                print('batch', batch, 'loss:', loss.data)
+                # print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
                 if batch == args['layer_train_batch'][l]:
                     flag = 1
                     break
@@ -179,7 +182,7 @@ def run(dataset_load_func, config_file):
             if flag == 1:
                 w = net_train.get_w()
                 w.requires_grad = False
-                feat_train = torch.mm(feat_train, w)
+                feat_train = torch.mm(feat_train, w.to(torch.device('cpu')))
                 feat_train = relu(feat_train)
                 weight_list.append(w)
                 if l == args['layer_num'] - 1:
@@ -187,6 +190,8 @@ def run(dataset_load_func, config_file):
                     classifier.requires_grad = False
                 break
 
+    weight_list = weight_list.to(torch.device('cpu'))
+    classifier = classifier.to(torch.device('cpu'))
     # test
     net_test = net.net_test()
     with torch.no_grad():

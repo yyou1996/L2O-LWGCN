@@ -1,3 +1,5 @@
+device: cpu
+
 node_num: 19717
 feat_dim: 500
 class_num: 3
@@ -10,4 +12,5 @@ layer_num: 2
 layer_output_dim: [128, 128]
 learning_rate: 1
 batch_size: 1024
-layer_train_batch: [70, 200]
+layer_train_batch: [80, 200]
+
