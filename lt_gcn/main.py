@@ -18,6 +18,7 @@ import yaml
 layered training, forked from graphsage
 """
 
+
 class SupervisedGraphSage(nn.Module):
 
     def __init__(self, num_classes, enc):
@@ -91,7 +92,6 @@ def load_pubmed():
             adj_lists[paper1].add(paper2)
             adj_lists[paper2].add(paper1)
     return feat_data, labels, adj_lists
-
 
 def run(dataset_load_func, config_file):
 
