@@ -14,6 +14,8 @@ import lt_gcn.net as net
 
 import yaml
 
+from l2l_utils.meta_optimizer import MetaModel, MetaOptimizer, FastMetaOptimizer
+
 """
 layered training, forked from graphsage
 """
@@ -200,6 +202,143 @@ def run(dataset_load_func, config_file):
     print("Acc in test:", f1_score(labels[test], output.data.numpy().argmax(axis=1), average="micro"))
     print("Average batch time:", np.mean(times))
 
+def run_l2l(dataset_load_func, config_file):
+
+    # dataset load
+    feat_data, labels, adj_lists = dataset_load_func()
+
+    # config parameter load
+    with open('./config/' + config_file) as f:
+        args = yaml.load(f)
+    print(args)
+
+    num_nodes = args['node_num']
+
+    # train, val and test set index generate
+    rand_indices = np.random.permutation(num_nodes)
+    test = rand_indices[:args['testset_size']]
+    val = rand_indices[args['testset_size']:(args['testset_size'] + args['valset_size'])]
+    train = list(rand_indices[(args['testset_size'] + args['valset_size']):])
+    train.sort()
+
+    # feature and label generate
+    feat_train = torch.FloatTensor(feat_data)[train, :]
+    label_train = labels[np.array(train)]
+    feat_test = torch.FloatTensor(feat_data)
+
+    # Adj matrix generate
+    Adj = torch.eye(num_nodes)
+    for i in range(num_nodes):
+        for j in adj_lists[i]:
+            Adj[i, j] = 1
+            Adj[j, i] = 1
+    Adj_eye = torch.eye(num_nodes)
+
+    Adj_train = Adj[train, :][:, train]
+    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t()
+    Adj_train = Adj_train + Adj_eye[train, :][:, train]
+
+    Adj_test = Adj
+    Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t()
+    Adj_test = Adj_test + Adj_eye
+
+    # layered training
+    times = []
+    weight_list = nn.ParameterList()
+
+    loss_func = nn.CrossEntropyLoss()
+    relu = nn.ReLU(inplace=True)
+
+    # create meta optimizer
+    # the '1' parameters do not matter
+    meta_net_train = net.net_train(1, 1, 1).to(torch.device(args['device']))
+    meta_optimizer = FastMetaOptimizer(MetaModel(meta_net_train), 1, 1).to(torch.device(args['device']))
+    optimizer =  torch.optim.Adam(meta_optimizer.parameters(), lr=args['meta_learning_rate'])
+
+    for l in range(args['layer_num']):
+
+        feat_train = torch.mm(Adj_train, feat_train) # sparse.mm
+        feeder_train = feed(feat_train, label_train)
+        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'], shuffle=True)
+
+        if l == 0:
+            in_channel = args['feat_dim']
+        else:
+            in_channel = args['layer_output_dim'][l-1]
+        hidden_channel = args['layer_output_dim'][l]
+        out_channel = args['class_num']
+
+        net_train = net.net_train(in_channel, hidden_channel, out_channel).to(torch.device(args['device']))
+        meta_net_train = net.net_train(in_channel, hidden_channel, out_channel).to(torch.device(args['device']))
+        meta_optimizer.meta_model = MetaModel(meta_net_train)
+
+        batch = 0
+        flag = 0
+        while True:
+            for x, x_label in dataset_train:
+
+                x = x.to(torch.device(args['device']))
+                x_label = x_label.to(torch.device(args['device']))
+
+                meta_optimizer.reset_lstm(keep_states=(batch > 0), model=net_train, use_cuda=(args['device'] == 'cuda'))
+                loss_sum = 0
+                prev_loss = torch.zeros(1).to(torch.device(args['device']))
+
+                start_time = time.time()
+
+                # meta learning
+                for bs in range(args['bptt_step']):
+
+                    # compute the gradient of the original net
+                    net_train.zero_grad()
+                    output = net_train(x)
+                    loss = loss_func(output, x_label.view(-1))
+                    loss.backward()
+
+                    # meta learning
+                    meta_model = meta_optimizer.meta_update(net_train, loss.data)
+                    output = meta_model(x)
+                    loss = loss_func(output, x_label.view(-1))
+
+                    loss_sum += (loss - Variable(prev_loss))
+                    prev_loss = loss.data
+
+                meta_optimizer.zero_grad()
+                loss_sum.backward()
+                for param in meta_optimizer.parameters():
+                    param.grad.data.clamp_(-1, 1)
+                optimizer.step()
+
+                end_time = time.time()
+                times.append(end_time - start_time)
+                batch = batch + 1
+                print('batch', batch, 'loss:', loss.data)
+                # print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
+                if batch == args['layer_train_batch'][l]:
+                    flag = 1
+                    break
+
+            if flag == 1:
+                w = net_train.get_w()
+                w.requires_grad = False
+                feat_train = torch.mm(feat_train, w.to(torch.device('cpu')))
+                feat_train = relu(feat_train)
+                weight_list.append(w)
+                if l == args['layer_num'] - 1:
+                    classifier = net_train.get_c()
+                    classifier.requires_grad = False
+                break
+
+    weight_list = weight_list.to(torch.device('cpu'))
+    classifier = classifier.to(torch.device('cpu'))
+    # test
+    net_test = net.net_test()
+    with torch.no_grad():
+        output = net_test(feat_test, Adj_test, weight_list, classifier)[test, :]
+
+    print("Acc in test:", f1_score(labels[test], output.data.numpy().argmax(axis=1), average="micro"))
+    print("Average batch time:", np.mean(times))
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -210,4 +349,4 @@ def setup_seed(seed):
 if __name__ == "__main__":
 
     setup_seed(50)
-    run(load_pubmed, 'pubmed.yaml')
+    run_l2l(load_pubmed, 'pubmed.yaml')
