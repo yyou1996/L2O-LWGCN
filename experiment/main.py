@@ -9,16 +9,22 @@ import random
 from sklearn.metrics import f1_score
 from collections import defaultdict
 
-from lt_gcn.feeder import feeder as feed
-import lt_gcn.net as net
+############
+
+import experiment.dataset_loader as dataset_loader
+from experiment.feeder import feeder as feed
+import experiment.net as net
 
 import yaml
+import scipy.sparse as sps
 
 from l2l_utils.meta_optimizer import MetaModel, MetaOptimizer, FastMetaOptimizer
 
-"""
-layered training, forked from graphsage
-"""
+'''
+learning to learn to be efficient with layered training GCN, forked from graphsage
+'''
+
+############
 
 
 def load_cora():
@@ -79,7 +85,10 @@ def load_pubmed():
 def run(dataset_load_func, config_file):
 
     # dataset load
-    feat_data, labels, adj_lists = dataset_load_func()
+    feat_data, labels, Adj_hat, dataset_split = dataset_load_func()
+    print('Finished loading dataset.')
+    # print(feat_data.shape)
+    # print(feat_data[:2, :])
 
     # config parameter load
     with open('./config/' + config_file) as f:
@@ -89,45 +98,76 @@ def run(dataset_load_func, config_file):
     num_nodes = args['node_num']
 
     # train, val and test set index generate
+    '''
     rand_indices = np.random.permutation(num_nodes)
     test = rand_indices[:args['testset_size']]
     val = rand_indices[args['testset_size']:(args['testset_size'] + args['valset_size'])]
     train = list(rand_indices[(args['testset_size'] + args['valset_size']):])
     train.sort()
+    '''
+    train = dataset_split['train']
+    train.sort()
+    val = dataset_split['val']
+    test = dataset_split['test']
+    test.sort()
+    print(labels[test])
 
     # feature and label generate
     feat_train = torch.FloatTensor(feat_data)[train, :]
-    label_train = labels[np.array(train)]
-    feat_test = torch.FloatTensor(feat_data)
+    label_train = labels[train]
+    feat_test = torch.FloatTensor(feat_data)[test, :]
+
+    '''
+    A = Adj_hat[test, :][:, test] ###
+    print((A.sum() - len(test)) / 2 / len(test)) ###
+    A = Adj_hat[train, :][:, train] ###
+    print((A.sum() - len(train)) / 2 / len(train)) ###
+    '''
 
     # Adj matrix generate
-    Adj = torch.eye(num_nodes)
-    for i in range(num_nodes):
-        for j in adj_lists[i]:
-            Adj[i, j] = 1
-            Adj[j, i] = 1
-    Adj_eye = torch.eye(num_nodes)
+    Adj = Adj_hat
+    Adj_eye = sps.eye(num_nodes, dtype=np.float32).tocsr()
 
     Adj_train = Adj[train, :][:, train]
-    Adj_train = ( Adj_train / Adj_train.sum(dim=0) ).t()
+    D_train = Adj_train.sum(axis=0)
+    Adj_train = Adj_train.multiply(1/D_train.transpose())
     Adj_train = Adj_train + Adj_eye[train, :][:, train]
+    # Adj_train = Adj_eye[train, :][:, train] ###
 
-    Adj_test = Adj
-    Adj_test = ( Adj_test / Adj_test.sum(dim=0) ).t()
-    Adj_test = Adj_test + Adj_eye
+    Adj_test = Adj[test, :][:, test]
+    D_test = Adj_test.sum(axis=0)
+    Adj_test = Adj_test.multiply(1/D_test.transpose())
+    Adj_test = Adj_test + Adj_eye[test, :][:, test]
+    '''
+    # Adj_test = Adj_eye ###
+    Adj_train = Adj_test ###
+    _feat = feat_test ###
+    '''
+
+    print('Finished generating adj matrix.')
 
     # layered training
     times = []
     weight_list = nn.ParameterList()
 
-    loss_func = nn.CrossEntropyLoss()
+    loss_func = nn.BCELoss()
     relu = nn.ReLU(inplace=True)
 
     for l in range(args['layer_num']):
 
-        feat_train = torch.mm(Adj_train, feat_train) # sparse.mm
+        '''
+        _feat = _feat.to(torch.device('cpu')).numpy() ###
+        _feat = torch.FloatTensor(Adj_train.dot(_feat)) ###
+        feat_train = _feat[train, :] ###
+        '''
+
+        feat_train = feat_train.to(torch.device('cpu')).numpy()
+        feat_train = Adj_train.dot(feat_train)
+        # feat_train = np.matmul(Adj_train.todense(), feat_train)
+        feat_train = torch.FloatTensor(feat_train)
+
         feeder_train = feed(feat_train, label_train)
-        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'], shuffle=True)
+        dataset_train = torch.utils.data.DataLoader(dataset=feeder_train, batch_size=args['batch_size'], shuffle=True, drop_last=True)
 
         if l == 0:
             in_channel = args['feat_dim']
@@ -137,7 +177,7 @@ def run(dataset_load_func, config_file):
         out_channel = args['class_num']
 
         net_train = net.net_train(in_channel, hidden_channel, out_channel).to(torch.device(args['device']))
-        optimizer = torch.optim.SGD(net_train.parameters(), lr=args['learning_rate'])
+        optimizer = torch.optim.Adam(net_train.parameters(), lr=args['learning_rate'])
 
         batch = 0
         flag = 0
@@ -150,23 +190,35 @@ def run(dataset_load_func, config_file):
                 start_time = time.time()
                 optimizer.zero_grad()
                 output = net_train(x)
-                loss = loss_func(output, x_label.view(-1))
+                loss = loss_func(output, x_label)
                 loss.backward()
                 optimizer.step()
                 end_time = time.time()
                 times.append(end_time - start_time)
-                batch = batch + 1
-                print('batch', batch, 'loss:', loss.data)
-                # print("Acc in val:", f1_score(x_label, output.data.numpy().argmax(axis=1), average="micro"))
-                if batch == args['layer_train_batch'][l]:
-                    flag = 1
-                    break
+
+            batch = batch + 1
+            print('batch', batch, 'loss:', loss.data)
+            # print("Acc:", f1_score(x_label.to(torch.device('cpu')), output.to(torch.device('cpu')).data.numpy().argmax(axis=1), average="micro"))
+            if batch == args['layer_train_batch'][l]:
+                flag = 1
 
             if flag == 1:
                 w = net_train.get_w()
                 w.requires_grad = False
+
                 feat_train = torch.mm(feat_train, w.to(torch.device('cpu')))
                 feat_train = relu(feat_train)
+
+                '''
+                _feat = torch.mm(_feat, w.to(torch.device('cpu'))) ###
+                _feat = relu(_feat) ###
+
+                classifier = net_train.get_c() ###
+                classifier.requires_grad = False ###
+
+                print("Acc in test:", f1_score(labels[test], torch.mm(_feat, classifier.to(torch.device('cpu')))[test, :].data.numpy().argmax(axis=1), average="micro")) ###
+                '''
+
                 weight_list.append(w)
                 if l == args['layer_num'] - 1:
                     classifier = net_train.get_c()
@@ -175,12 +227,15 @@ def run(dataset_load_func, config_file):
 
     weight_list = weight_list.to(torch.device('cpu'))
     classifier = classifier.to(torch.device('cpu'))
+    # _feat = torch.mm(_feat, classifier) ###
+    # output = _feat[test, :] ###
+
     # test
     net_test = net.net_test()
     with torch.no_grad():
-        output = net_test(feat_test, Adj_test, weight_list, classifier)[test, :]
+        output = net_test(feat_test, Adj_test, weight_list, classifier)
 
-    print("Acc in test:", f1_score(labels[test], output.data.numpy().argmax(axis=1), average="micro"))
+    print("Acc in test:", f1_score(labels[test], output.data.numpy(), average="micro"))
     print("Average batch time:", np.mean(times))
 
 def run_l2l(dataset_load_func, config_file):
@@ -333,4 +388,4 @@ def setup_seed(seed):
 if __name__ == "__main__":
 
     setup_seed(50)
-    run_l2l(load_pubmed, 'pubmed.yaml')
+    run(dataset_loader.ppi_loader, 'ppi.yaml')
