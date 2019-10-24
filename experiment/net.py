@@ -23,7 +23,6 @@ class net_train(nn.Module):
         x = torch.mm(x, self.weight)
         x = self.relu(x)
         x = torch.mm(x, self.classifier)
-        x = self.sigmoid(x)
         return x
 
     def get_w(self):
@@ -48,8 +47,8 @@ class net_test(nn.Module):
             x = self.relu(x)
 
         x = torch.mm(x, classifier)
-        x[x>0] = 1
-        x[x<=0] = 0
+        # x[x>0] = 1
+        # x[x<=0] = 0
 
         return x
 

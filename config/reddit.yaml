@@ -9,10 +9,10 @@ valset_size: 23699
 testset_size: 55334
 
 layer_num: 2
-layer_output_dim: [512, 256]
+layer_output_dim: [512, 512]
 learning_rate: 0.0005
-batch_size: 256
-layer_train_batch: [10, 10]
+batch_size: 1024
+layer_train_batch: [50, 50]
 
 bptt_step: 5
 meta_learning_rate: 1

@@ -1,0 +1,18 @@
+device: cuda
+
+node_num: 643474
+feat_dim: 100
+class_num: 32
+
+trainset_size: 0
+valset_size: 0
+testset_size: 0
+
+layer_num: 4
+layer_output_dim: [256, 256, 256, 256]
+learning_rate: 0.0005
+batch_size: 1024
+layer_train_batch: [30, 30, 30, 30]
+
+bptt_step: 5
+meta_learning_rate: 1

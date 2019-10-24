@@ -9,11 +9,14 @@ import random
 from sklearn.metrics import f1_score
 from collections import defaultdict
 
-from graphsage.encoders import Encoder
-from graphsage.aggregators import MeanAggregator
+from lt_gcn.encoders import Encoder
+from lt_gcn.aggregators import MeanAggregator
 
-from graphsage.feeder import feeder as feed
-import graphsage.net as net
+from lt_gcn.feeder import feeder as feed
+import lt_gcn.net as net
+
+import json
+from sklearn.preprocessing import StandardScaler
 
 
 """
@@ -39,6 +42,101 @@ class SupervisedGraphSage(nn.Module):
     def loss(self, nodes, labels):
         scores = self.forward(nodes)
         return self.xent(scores, labels.squeeze())
+
+def load_reddit():
+    num_nodes = 232965
+    num_feats = 602
+    feat_data = np.zeros((num_nodes, num_feats))
+    labels = np.empty((num_nodes,1), dtype=np.int64)
+    node_map = {}
+    label_map = {}
+
+    with open('/scratch/user/yuning.you/dataset/reddit/reddit/reddit-id_map.json', 'r') as f:
+        id_map = json.load(f)
+
+    # feature
+    feat_data = np.load('/scratch/user/yuning.you/dataset/reddit/reddit/reddit-feats.npy')
+    scaler = StandardScaler()
+    scaler.fit(feat_data)
+    feat_data = scaler.transform(feat_data)
+    print('finish loading feature')
+
+    # label
+    with open('/scratch/user/yuning.you/dataset/reddit/reddit/reddit-class_map.json', 'r') as f:
+        data = json.load(f)
+    for dl in data.items():
+        labels[id_map[dl[0]]] = dl[1]
+    print('finish loading label')
+
+    # edge list
+    adj_lists = defaultdict(set)
+    with open('/scratch/user/yuning.you/dataset/reddit/reddit/reddit-G.json', 'r') as f:
+        data = json.load(f)['links']
+    for d in data:
+        i = d['source']
+        j = d['target']
+        adj_lists[i].add(j)
+        adj_lists[j].add(i)
+    print('finish loading edge list')
+
+    with open('/scratch/user/yuning.you/dataset/reddit/reddit/reddit-G.json', 'r') as f:
+        data = json.load(f)['nodes']
+    dataset_split = {'train': [], 'val': [], 'test': []}
+    for dn in data:
+        if dn['val']:
+            dataset_split['val'].append(id_map[dn['id']])
+        elif dn['test']:
+            dataset_split['test'].append(id_map[dn['id']])
+        else:
+            dataset_split['train'].append(id_map[dn['id']])
+    print('finish loading datasetsplit')
+
+    return feat_data, labels, adj_lists, dataset_split
+
+def run_reddit():
+    np.random.seed(1)
+    random.seed(1)
+    num_nodes = 232965
+    feat_data, labels, adj_lists, dataset_split = load_reddit()
+    print('finish loading data')
+    features = nn.Embedding(232965, 602)
+    features.weight = nn.Parameter(torch.FloatTensor(feat_data), requires_grad=False)
+   # features.cuda()
+
+    agg1 = MeanAggregator(features, cuda=True)
+    enc1 = Encoder(features, 602, 256, adj_lists, agg1, gcn=True, cuda=False)
+    agg2 = MeanAggregator(lambda nodes : enc1(nodes).t(), cuda=False)
+    enc2 = Encoder(lambda nodes : enc1(nodes).t(), enc1.embed_dim, 256, adj_lists, agg2,
+            base_model=enc1, gcn=True, cuda=False)
+    enc1.num_samples = 5
+    enc2.num_samples = 5
+
+    graphsage = SupervisedGraphSage(41, enc2)
+#    graphsage.cuda()
+    rand_indices = np.random.permutation(num_nodes)
+    test = dataset_split['test']
+    val = dataset_split['val']
+    train = dataset_split['train']
+
+    optimizer = torch.optim.SGD(filter(lambda p : p.requires_grad, graphsage.parameters()), lr=0.0001)
+    times = []
+    for batch in range(100):
+        batch_nodes = train[:256]
+        random.shuffle(train)
+        start_time = time.time()
+        optimizer.zero_grad()
+        loss = graphsage.loss(batch_nodes, 
+                Variable(torch.LongTensor(labels[np.array(batch_nodes)])))
+        loss.backward()
+        optimizer.step()
+        end_time = time.time()
+        times.append(end_time-start_time)
+        print(loss)
+        print(batch, loss.data)
+
+    val_output = graphsage.forward(val) 
+    print("Validation F1:", f1_score(labels[val], val_output.data.numpy().argmax(axis=1), average="micro"))
+    print("Average batch time:", np.mean(times))
 
 def load_cora():
     num_nodes = 2708
@@ -486,4 +584,6 @@ if __name__ == "__main__":
     setup_seed(50)
 
     # run_cora_ltf()
-    run_pubmed_ltf()
+    # run_pubmed_ltf()
+
+    run_reddit()
