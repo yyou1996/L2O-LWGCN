@@ -1,18 +1,22 @@
-device: cpu
-
 node_num: 19717
 feat_dim: 500
 class_num: 3
 
-trainset_size: 18217
-valset_size: 500
-testset_size: 1000
-
 layer_num: 2
-layer_output_dim: [128, 128]
-learning_rate: 1
+hidden_dim: 16
+learning_rate: 0.001
 batch_size: 1024
-layer_train_batch: [80, 200]
+epoch_num: [80, 80]
 
-bptt_step: 5
-meta_learning_rate: 1
+l2o_learning_rate: 0.05
+baseline_reward: 0.3
+total_round: 200
+sample_node_num: 1024
+stop_prob_threshold: 0.6
+controller_len: 20
+init_round: 10 # ir*5
+decision_step: 10
+time_ratio: 0.0001
+min_batch: 35
+max_batch: 95
+baseline_ratio: 0.9

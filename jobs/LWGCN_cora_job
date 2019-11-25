@@ -1,0 +1,25 @@
+#!/bin/bash
+##ENVIRONMENT SETTINGS; CHANGE WITH CAUTION
+#SBATCH --export=NONE                #Do not propagate environment
+#SBATCH --get-user-env=L             #Replicate login environment
+
+##NECESSARY JOB SPECIFICATIONS
+#SBATCH --job-name=proj_1
+#SBATCH --time=3:00:00
+#SBATCH --ntasks=1                   #Request 1 task
+#SBATCH --mem=40960M
+#SBATCH --output=./outputs/LWGCN_cora_output.%j
+#SBATCH --gres=gpu:1                 #Request 1 GPU per node can be 1 or 2
+#SBATCH --partition=gpu              #Request the GPU partition/queue
+
+##OPTIONAL JOB SPECIFICATIONS
+#SBATCH --account=122754087905       #Set billing account to 123456
+#SBATCH --mail-type=ALL              #Send email on all job events
+#SBATCH --mail-user=yuning.you@tamu.edu    #Send all emails to email_address 
+
+module load Anaconda/3-5.0.0.1
+source activate yuning_proj_1
+python -m l2o_lwgcn.main --dataset cora --config-file cora.yaml --layer-num 2 --epoch-num 60 60
+python -m l2o_lwgcn.main --dataset cora --config-file cora.yaml --layer-num 2 --epoch-num 80 80
+python -m l2o_lwgcn.main --dataset cora --config-file cora.yaml --layer-num 2 --epoch-num 100 100
+source deactivate
