@@ -1,4 +1,4 @@
-# L2O_LWGCN
+# L2O-LWGCN
 
 Layer-wise GCN:
 
