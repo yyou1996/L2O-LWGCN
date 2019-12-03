@@ -11,7 +11,7 @@ epoch_num: [80, 80]
 l2o_learning_rate: 0.05
 baseline_reward: 0.3
 total_round: 200
-sample_node_num: 1024
+sample_node_num: 10240
 stop_prob_threshold: 0.6
 controller_len: 20
 init_round: 10 # ir*5
