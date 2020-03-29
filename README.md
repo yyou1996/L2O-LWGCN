@@ -1,9 +1,17 @@
-# L2-GCN
+# L<sup>2</sup>-GCN: Layer-Wise and Learned Efficient Training of Graph Convolutional Networks
 
-Layer-wise GCN:
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-python -m l2o_lwgcn.main --dataset cora --config-file cora.yaml --layer-num 2 --epoch-num 80 80
+[L<sup>2</sup>-GCN: Layer-Wise and Learned Efficient Training of Graph Convolutional Networks]()
 
-Layer-wise GCN with learning to optimize controller:
+Yuning You, Tianlong Chen, Zhangyang Wang, and Yang Shen
 
-python -m l2o_lwgcn.main_l2o --dataset cora --config-file cora.yaml --layer-num 2
+In CVPR 2020.
+
+## Overview
+
+To be continued.
+
+## Citation
+
+To be continued.
